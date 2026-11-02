@@ -77,7 +77,7 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      margin: 20px 0;
+      margin: 10px 0;
     }
 
     .gauge-svg {
@@ -111,16 +111,23 @@
     }
 
     .speed-number {
-      font-size: 4.5rem;
+      font-size: 4.2rem;
       font-weight: 800;
       line-height: 1;
       font-variant-numeric: tabular-nums;
     }
 
     .speed-unit {
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       color: var(--text-sub);
-      margin-top: 4px;
+      margin-top: 2px;
+    }
+
+    .freq-subtext {
+      font-size: 0.8rem;
+      color: var(--accent-color);
+      margin-top: 6px;
+      font-variant-numeric: tabular-nums;
     }
 
     /* サブ情報 */
@@ -130,12 +137,12 @@
       gap: 12px;
       width: 100%;
       max-width: 450px;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
     }
 
     .stat-card {
       background: var(--card-bg);
-      padding: 14px;
+      padding: 12px;
       border-radius: 14px;
       text-align: center;
       position: relative;
@@ -161,7 +168,7 @@
     }
 
     .stat-value {
-      font-size: 1.4rem;
+      font-size: 1.3rem;
       font-weight: 700;
     }
 
@@ -183,7 +190,7 @@
 
     .btn-toggle {
       width: 100%;
-      height: 64px;
+      height: 60px;
       border: none;
       border-radius: 16px;
       font-size: 1.2rem;
@@ -226,7 +233,7 @@
       background: var(--card-bg);
       padding: 12px 16px;
       border-radius: 12px;
-      margin-top: 15px;
+      margin-top: 10px;
     }
 
     .sim-header {
@@ -259,10 +266,11 @@
     <div class="speed-display">
       <div id="speed-val" class="speed-number">0</div>
       <div class="speed-unit">km/h</div>
+      <div id="freq-val" class="freq-subtext">0 Hz (完全無音)</div>
     </div>
   </div>
 
-  <!-- サブ統計データ（最高速度カードタップでリセット可能） -->
+  <!-- サブ統計データ -->
   <div class="stats-grid">
     <div id="reset-max-btn" class="stat-card clickable" title="タップして最高速度をリセット">
       <div class="stat-label">最高速度 <span>🔄</span></div>
@@ -315,6 +323,7 @@
 
     // --- DOM要素 ---
     const speedValEl = document.getElementById('speed-val');
+    const freqValEl = document.getElementById('freq-val');
     const gaugeBarEl = document.getElementById('gauge-bar');
     const maxSpeedEl = document.getElementById('max-speed');
     const tripDistEl = document.getElementById('trip-dist');
@@ -352,14 +361,13 @@
 
     // 速度に応じた音の更新（0km/hは完全無音）
     function updateAudio(speed) {
-      if (!isSoundOn || !audioCtx) return;
+      if (!audioCtx) return;
 
       // 0km/h または ほぼ停止時は完全に無音にする
       if (speed <= 0.5) {
-        gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
-        if (pulseTimer) {
-          clearInterval(pulseTimer);
-          pulseTimer = null;
+        freqValEl.textContent = `0 Hz (完全無音)`;
+        if (gainNode) {
+          gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
         }
         return;
       }
@@ -369,9 +377,11 @@
 
       // 周波数（音高）の計算
       const targetFreq = MIN_FREQ + (MAX_FREQ - MIN_FREQ) * ratio;
-      oscNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+      freqValEl.textContent = `${Math.round(targetFreq)} Hz`;
 
-      // 音量の設定 (走行中は一定の音量)
+      if (!isSoundOn) return;
+
+      oscNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
       gainNode.gain.setTargetAtTime(0.2, audioCtx.currentTime, 0.05);
     }
 
@@ -395,9 +405,8 @@
 
     // --- 最高速度のリセット処理 ---
     resetMaxBtn.addEventListener('click', () => {
-      maxSpeed = currentSpeed; // 現在の速度をベースにする（または0にリセット）
+      maxSpeed = currentSpeed; 
       maxSpeedEl.textContent = maxSpeed.toFixed(1);
-      // タップ時にアニメーション的なフィードバック
       resetMaxBtn.style.transform = 'scale(0.95)';
       setTimeout(() => { resetMaxBtn.style.transform = 'scale(1)'; }, 100);
     });
@@ -427,7 +436,7 @@
         maxSpeedEl.textContent = maxSpeed.toFixed(1);
       }
 
-      // 警告音のリアルタイム更新
+      // 警告音・Hzのリアルタイム更新
       updateAudio(currentSpeed);
     }
 
@@ -465,21 +474,18 @@
 
           let speedKmH = 0;
 
-          // GPSから速度が直接取得できる場合 (m/s -> km/h)
           if (pos.coords.speed !== null && pos.coords.speed >= 0) {
             speedKmH = pos.coords.speed * 3.6;
           } 
-          // 取得できない場合は距離と時間から計算
           else if (lastPosition) {
-            const timeDiff = (pos.timestamp - lastPosition.timestamp) / 1000; // 秒
+            const timeDiff = (pos.timestamp - lastPosition.timestamp) / 1000;
             if (timeDiff > 0) {
               const dist = calcDistance(
                 lastPosition.coords.latitude, lastPosition.coords.longitude,
                 pos.coords.latitude, pos.coords.longitude
-              ); // km
+              );
               speedKmH = (dist / timeDiff) * 3600;
               
-              // 距離の加算
               if (speedKmH > 1) {
                 totalDistance += dist;
                 tripDistEl.textContent = totalDistance.toFixed(2);
@@ -489,7 +495,6 @@
 
           lastPosition = pos;
 
-          // シミュレータ未使用時のみGPS速度を反映
           if (simSlider.value == 0) {
             setSpeed(speedKmH);
           }
@@ -514,7 +519,7 @@
           }
         },
         {
-          enableHighAccuracy: true, // 高精度モード
+          enableHighAccuracy: true,
           timeout: 10000,
           maximumAge: 0
         }
