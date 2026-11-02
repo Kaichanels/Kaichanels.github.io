@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>サイクルスピードメーター & 警告音</title>
+  <style>
+    :root {
+      --bg-color: #121214;
+      --card-bg: #1e1e24;
+      --accent-color: #00e676;
+      --accent-warn: #ff3d00;
+      --text-main: #ffffff;
+      --text-sub: #a0a0ab;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    header {
+      width: 100%;
+      max-width: 450px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+    }
+
+    h1 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--text-sub);
+    }
+
+    .status-badge {
+      font-size: 0.8rem;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: #2a2a35;
+      color: var(--text-sub);
+      transition: all 0.3s;
+    }
+
+    .status-badge.active {
+      background: rgba(0, 230, 118, 0.2);
+      color: var(--accent-color);
+    }
+
+    .status-badge.error {
+      background: rgba(255, 61, 0, 0.2);
+      color: var(--accent-warn);
+    }
+
+    /* メーター表示 */
+    .gauge-container {
+      position: relative;
+      width: 280px;
+      height: 280px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      margin: 20px 0;
+    }
+
+    .gauge-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .gauge-bg {
+      fill: none;
+      stroke: #2a2a35;
+      stroke-width: 16;
+    }
+
+    .gauge-value {
+      fill: none;
+      stroke: var(--accent-color);
+      stroke-width: 16;
+      stroke-dasharray: 754; /* 2 * PI * 120 */
+      stroke-dashoffset: 754;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.2s ease-out, stroke 0.3s;
+    }
+
+    .speed-display {
+      z-index: 10;
+      text-align: center;
+    }
+
+    .speed-number {
+      font-size: 4.5rem;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .speed-unit {
+      font-size: 1.2rem;
+      color: var(--text-sub);
+      margin-top: 4px;
+    }
+
+    /* サブ情報 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 100%;
+      max-width: 450px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      padding: 14px;
+      border-radius: 14px;
+      text-align: center;
+      position: relative;
+    }
+
+    .stat-card.clickable {
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .stat-card.clickable:active {
+      background: #2a2a35;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .reset-hint {
+      font-size: 0.65rem;
+      color: var(--text-sub);
+      opacity: 0.7;
+      margin-top: 2px;
+    }
+
+    /* メインコントロールボタン */
+    .controls {
+      width: 100%;
+      max-width: 450px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn-toggle {
+      width: 100%;
+      height: 64px;
+      border: none;
+      border-radius: 16px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+      background: #2a2a35;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .btn-toggle:active {
+      transform: scale(0.98);
+    }
+
+    .btn-toggle.active {
+      background: var(--accent-color);
+      color: #000;
+    }
+
+    .btn-retry {
+      background: transparent;
+      border: 1px solid #3a3a45;
+      color: var(--text-sub);
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: none;
+    }
+
+    /* デバッグ・模擬スライダー */
+    .sim-panel {
+      width: 100%;
+      max-width: 450px;
+      background: var(--card-bg);
+      padding: 12px 16px;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    .sim-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+    }
+
+    .sim-slider {
+      width: 100%;
+      accent-color: var(--accent-color);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>CYCLE SOUND SPEEDO</h1>
+    <div id="gps-status" class="status-badge">GPS 準備中</div>
+  </header>
+
+  <!-- スピードメーター -->
+  <div class="gauge-container">
+    <svg class="gauge-svg" viewBox="0 0 280 280">
+      <circle class="gauge-bg" cx="140" cy="140" r="120"></circle>
+      <circle id="gauge-bar" class="gauge-value" cx="140" cy="140" r="120"></circle>
+    </svg>
+    <div class="speed-display">
+      <div id="speed-val" class="speed-number">0</div>
+      <div class="speed-unit">km/h</div>
+    </div>
+  </div>
+
+  <!-- サブ統計データ（最高速度カードタップでリセット可能） -->
+  <div class="stats-grid">
+    <div id="reset-max-btn" class="stat-card clickable" title="タップして最高速度をリセット">
+      <div class="stat-label">最高速度 <span>🔄</span></div>
+      <div class="stat-value"><span id="max-speed">0.0</span> <small style="font-size:0.7rem">km/h</small></div>
+      <div class="reset-hint">タップでリセット</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">走行距離</div>
+      <div class="stat-value"><span id="trip-dist">0.00</span> <small style="font-size:0.7rem">km</small></div>
+      <div class="reset-hint" style="opacity:0;">-</div>
+    </div>
+  </div>
+
+  <!-- コントロールエリア -->
+  <div class="controls">
+    <button id="toggle-sound-btn" class="btn-toggle">
+      <span>🔊 警告音 OFF</span>
+    </button>
+    <button id="retry-gps-btn" class="btn-retry">🔄 GPSを再接続する</button>
+  </div>
+
+  <!-- テスト用シミュレータ -->
+  <div class="sim-panel">
+    <div class="sim-header">
+      <span>動作テスト用（速度シミュレータ）</span>
+      <span id="sim-val">0 km/h</span>
+    </div>
+    <input type="range" id="sim-slider" class="sim-slider" min="0" max="40" step="0.5" value="0">
+  </div>
+
+  <script>
+    // --- 設定定数 ---
+    const MAX_SPEED = 40; // 最高速度 (km/h)
+    const MIN_FREQ = 240; // 0km/h付近の周波数 (Hz)
+    const MAX_FREQ = 880; // 40km/h付近の周波数 (Hz)
+    const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 120; // 円周長さ
+
+    // --- 状態管理変数 ---
+    let isSoundOn = false;
+    let currentSpeed = 0;
+    let maxSpeed = 0;
+    let totalDistance = 0; // km
+    let lastPosition = null;
+
+    // --- Web Audio API 変数 ---
+    let audioCtx = null;
+    let oscNode = null;
+    let gainNode = null;
+    let pulseTimer = null;
+
+    // --- DOM要素 ---
+    const speedValEl = document.getElementById('speed-val');
+    const gaugeBarEl = document.getElementById('gauge-bar');
+    const maxSpeedEl = document.getElementById('max-speed');
+    const tripDistEl = document.getElementById('trip-dist');
+    const toggleSoundBtn = document.getElementById('toggle-sound-btn');
+    const gpsStatusEl = document.getElementById('gps-status');
+    const retryGpsBtn = document.getElementById('retry-gps-btn');
+    const resetMaxBtn = document.getElementById('reset-max-btn');
+    const simSlider = document.getElementById('sim-slider');
+    const simValEl = document.getElementById('sim-val');
+
+    // 初期設定
+    gaugeBarEl.style.strokeDasharray = GAUGE_CIRCUMFERENCE;
+    gaugeBarEl.style.strokeDashoffset = GAUGE_CIRCUMFERENCE;
+
+    // --- 音声エンジンの初期化・更新 ---
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        oscNode = audioCtx.createOscillator();
+        gainNode = audioCtx.createGain();
+
+        oscNode.type = 'sine'; // やわらかい警告音
+        oscNode.frequency.setValueAtTime(MIN_FREQ, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // 初期は完全無音
+
+        oscNode.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscNode.start();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    // 速度に応じた音の更新（0km/hは完全無音）
+    function updateAudio(speed) {
+      if (!isSoundOn || !audioCtx) return;
+
+      // 0km/h または ほぼ停止時は完全に無音にする
+      if (speed <= 0.5) {
+        gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+        if (pulseTimer) {
+          clearInterval(pulseTimer);
+          pulseTimer = null;
+        }
+        return;
+      }
+
+      // 速度の比率 (0.0 〜 1.0)
+      const ratio = Math.min(Math.max(speed / MAX_SPEED, 0), 1);
+
+      // 周波数（音高）の計算
+      const targetFreq = MIN_FREQ + (MAX_FREQ - MIN_FREQ) * ratio;
+      oscNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+
+      // 音量の設定 (走行中は一定の音量)
+      gainNode.gain.setTargetAtTime(0.2, audioCtx.currentTime, 0.05);
+    }
+
+    // サウンドのON/OFF切替
+    toggleSoundBtn.addEventListener('click', () => {
+      initAudio();
+      isSoundOn = !isSoundOn;
+
+      if (isSoundOn) {
+        toggleSoundBtn.classList.add('active');
+        toggleSoundBtn.querySelector('span').textContent = '🔊 警告音 ON';
+        updateAudio(currentSpeed);
+      } else {
+        toggleSoundBtn.classList.remove('active');
+        toggleSoundBtn.querySelector('span').textContent = '🔇 警告音 OFF';
+        if (gainNode) {
+          gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+        }
+      }
+    });
+
+    // --- 最高速度のリセット処理 ---
+    resetMaxBtn.addEventListener('click', () => {
+      maxSpeed = currentSpeed; // 現在の速度をベースにする（または0にリセット）
+      maxSpeedEl.textContent = maxSpeed.toFixed(1);
+      // タップ時にアニメーション的なフィードバック
+      resetMaxBtn.style.transform = 'scale(0.95)';
+      setTimeout(() => { resetMaxBtn.style.transform = 'scale(1)'; }, 100);
+    });
+
+    // --- 速度・ゲージ表示の更新 ---
+    function setSpeed(speed) {
+      currentSpeed = Math.max(0, Math.min(speed, MAX_SPEED));
+      
+      // 数値表示
+      speedValEl.textContent = Math.round(currentSpeed);
+
+      // メーターアニメーション
+      const ratio = currentSpeed / MAX_SPEED;
+      const offset = GAUGE_CIRCUMFERENCE * (1 - ratio);
+      gaugeBarEl.style.strokeDashoffset = offset;
+
+      // 速度超過の警告色
+      if (currentSpeed > 30) {
+        gaugeBarEl.style.stroke = 'var(--accent-warn)';
+      } else {
+        gaugeBarEl.style.stroke = 'var(--accent-color)';
+      }
+
+      // 最高速度記録
+      if (currentSpeed > maxSpeed) {
+        maxSpeed = currentSpeed;
+        maxSpeedEl.textContent = maxSpeed.toFixed(1);
+      }
+
+      // 警告音のリアルタイム更新
+      updateAudio(currentSpeed);
+    }
+
+    // 2点間の距離計算 (Haversine formula)
+    function calcDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371; // 地球の半径 (km)
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    // --- GPS処理 ---
+    let watchId = null;
+
+    function startGPS() {
+      if (!('geolocation' in navigator)) {
+        gpsStatusEl.textContent = 'GPS非対応';
+        gpsStatusEl.classList.add('error');
+        return;
+      }
+
+      gpsStatusEl.textContent = 'GPS接続中...';
+      gpsStatusEl.className = 'status-badge';
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          gpsStatusEl.textContent = 'GPS受信中';
+          gpsStatusEl.className = 'status-badge active';
+          retryGpsBtn.style.display = 'none';
+
+          let speedKmH = 0;
+
+          // GPSから速度が直接取得できる場合 (m/s -> km/h)
+          if (pos.coords.speed !== null && pos.coords.speed >= 0) {
+            speedKmH = pos.coords.speed * 3.6;
+          } 
+          // 取得できない場合は距離と時間から計算
+          else if (lastPosition) {
+            const timeDiff = (pos.timestamp - lastPosition.timestamp) / 1000; // 秒
+            if (timeDiff > 0) {
+              const dist = calcDistance(
+                lastPosition.coords.latitude, lastPosition.coords.longitude,
+                pos.coords.latitude, pos.coords.longitude
+              ); // km
+              speedKmH = (dist / timeDiff) * 3600;
+              
+              // 距離の加算
+              if (speedKmH > 1) {
+                totalDistance += dist;
+                tripDistEl.textContent = totalDistance.toFixed(2);
+              }
+            }
+          }
+
+          lastPosition = pos;
+
+          // シミュレータ未使用時のみGPS速度を反映
+          if (simSlider.value == 0) {
+            setSpeed(speedKmH);
+          }
+        },
+        (err) => {
+          console.warn('GPS Error:', err);
+          gpsStatusEl.className = 'status-badge error';
+          retryGpsBtn.style.display = 'block';
+
+          switch (err.code) {
+            case err.PERMISSION_DENIED:
+              gpsStatusEl.textContent = '位置情報が拒否されました';
+              break;
+            case err.POSITION_UNAVAILABLE:
+              gpsStatusEl.textContent = 'GPS信号なし';
+              break;
+            case err.TIMEOUT:
+              gpsStatusEl.textContent = 'GPSタイムアウト';
+              break;
+            default:
+              gpsStatusEl.textContent = 'GPSエラー';
+          }
+        },
+        {
+          enableHighAccuracy: true, // 高精度モード
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    retryGpsBtn.addEventListener('click', () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      startGPS();
+    });
+
+    // --- テスト用スライダー処理 ---
+    simSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      simValEl.textContent = `${val} km/h`;
+      setSpeed(val);
+    });
+
+    // --- 画面スリープ防止 (Wake Lock API) ---
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.log('Wake Lock Error:', err);
+      }
+    }
+
+    // 起動処理
+    startGPS();
+    requestWakeLock();
+  </script>
+</body>
+</html>
